@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Global Terrorism Heatmap</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        .tooltip {
+            position: absolute;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border-radius: 4px;
+            pointer-events: none;
+            font-size: 12px;
+        }
+        #slider-container {
+            margin-top: 20px;
+            text-align: center;
+        }
+        #slider {
+            width: 300px;
+        }
+        .legend {
+            font-size: 12px;
+            font-family: Arial, sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="slider-container">
+        <input id="slider" type="range" min="1970" max="2020" step="1" value="1970">
+        <label id="year-label">Year: 1970</label>
+    </div>
+    <div id="legend"></div>
+
+    <script>
+        const width = 960;
+        const height = 500;
+
+        const svg = d3.select("#map")
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height);
+
+        const projection = d3.geoMercator()
+            .scale(140)
+            .translate([width / 2, height / 1.5]);
+
+        const path = d3.geoPath().projection(projection);
+
+        // Color scale for incident counts
+        const colorScale = d3.scaleQuantize()
+            .range(d3.schemeReds[9]);
+
+        let terrorismData = {};
+        let selectedYear = 1970;
+
+        // Tooltip setup
+        const tooltip = d3.select("body").append("div")
+            .attr("class", "tooltip")
+            .style("opacity", 0);
+
+        // Load world map and terrorism data
+        Promise.all([
+            d3.json("custom.geo.json"),
+            d3.csv("region_12.csv")
+        ]).then(([world, data]) => {
+
+            // Process the data to get counts by country and year
+            data.forEach(d => {
+                const country = d.country_txt;
+                const year = +d.iyear;
+                if (!terrorismData[country]) terrorismData[country] = {};
+                if (!terrorismData[country][year]) terrorismData[country][year] = 0;
+                terrorismData[country][year] += 1;
+            });
+
+            // Update color scale domain based on the data range
+            const maxIncidents = d3.max(Object.values(terrorismData).flatMap(d => Object.values(d)));
+            colorScale.domain([0, maxIncidents]);
+
+            // Draw the map
+            svg.append("g")
+                .selectAll("path")
+                .data(world.features)
+                .enter().append("path")
+                .attr("d", path)
+                .attr("fill", d => {
+                    const country = d.properties.name;
+                    const incidentCount = terrorismData[country]?.[selectedYear] || 0;
+                    return colorScale(incidentCount);
+                })
+                .on("mouseover", function(event, d) {
+                    const country = d.properties.name;
+                    const incidentCount = terrorismData[country]?.[selectedYear] || 0;
+                    tooltip.html(`${country}: ${incidentCount} incidents`)
+                        .style("left", (event.pageX + 5) + "px")
+                        .style("top", (event.pageY - 5) + "px")
+                        .style("opacity", 1);
+                })
+                .on("mousemove", function(event) {
+                    tooltip.style("left", (event.pageX + 5) + "px")
+                           .style("top", (event.pageY - 5) + "px");
+                })
+                .on("mouseout", function() {
+                    tooltip.style("opacity", 0);
+                });
+
+            // Slider event listener
+            d3.select("#slider")
+                .on("input", function() {
+                    selectedYear = +this.value;
+                    d3.select("#year-label").text(`Year: ${selectedYear}`);
+                    updateMap();
+                });
+
+            function updateMap() {
+                svg.selectAll("path")
+                    .attr("fill", d => {
+                        const country = d.properties.name;
+                        const incidentCount = terrorismData[country]?.[selectedYear] || 0;
+                        return colorScale(incidentCount);
+                    });
+            }
+
+            updateMap();
+
+            // Create color legend
+            const legendWidth = 300;
+            const legendHeight = 10;
+
+            const legendSvg = d3.select("#legend")
+                .append("svg")
+                .attr("width", legendWidth)
+                .attr("height", 40);
+
+            const legendScale = d3.scaleLinear()
+                .domain([0, maxIncidents])
+                .range([0, legendWidth]);
+
+            const legendAxis = d3.axisBottom(legendScale)
+                .ticks(5)
+                .tickSize(-legendHeight);
+
+            const gradient = legendSvg.append("defs")
+                .append("linearGradient")
+                .attr("id", "gradient")
+                .attr("x1", "0%")
+                .attr("y1", "0%")
+                .attr("x2", "100%")
+                .attr("y2", "0%");
+
+            colorScale.range().forEach((color, i, array) => {
+                gradient.append("stop")
+                    .attr("offset", `${(i / (array.length - 1)) * 100}%`)
+                    .attr("stop-color", color);
+            });
+
+            legendSvg.append("rect")
+                .attr("width", legendWidth)
+                .attr("height", legendHeight)
+                .style("fill", "url(#gradient)");
+
+            legendSvg.append("g")
+                .attr("transform", `translate(0, ${legendHeight})`)
+                .call(legendAxis)
+                .select(".domain").remove();
+        });
+    </script>
+</body>
+</html>

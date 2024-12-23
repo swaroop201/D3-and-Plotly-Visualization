@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Top 10 Groups by Number of Incidents</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        .bar:hover {
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <h1>Top 10 Terrorist Groups by Number of Incidents</h1>
+    
+    <div id="chart"></div>
+
+    <select id="yearSelect"></select>
+
+    <script>
+        // Set up dimensions
+        const margin = {top: 20, right: 30, bottom: 40, left: 200};
+
+        const width = 800 - margin.left - margin.right;
+
+        const height = 400 - margin.top - margin.bottom;
+
+        // Create SVG
+        const svg = d3.select("#chart")
+
+            .append("svg")
+
+            .attr("width", width + margin.left + margin.right)
+
+            .attr("height", height + margin.top + margin.bottom)
+
+            .append("g")
+
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        // Load and process data
+        d3.csv("region_12.csv").then(function(data) {
+            // Filter out 'Unknown' category as it is not a specific group
+            data = data.filter(d => d.gname !== "Unknown");
+
+            // Obtain the years (unique)
+            const years = [...new Set(data.map(d => d.iyear))].sort();
+
+            // Create year dropdown
+            const yearSelect = d3.select("#yearSelect");
+            yearSelect.selectAll("option")
+
+                .data(years)
+
+                .enter()
+
+                .append("option")
+
+                .text(d => d);
+
+            // Create initial chart (will show the top 10 regardless of year)
+            updateOverallTop10Chart();
+
+            // Implement update function for year change
+            yearSelect.on("change", function() {
+                const selectedYear = this.value;
+                updateChart(selectedYear);
+            });
+
+            function updateOverallTop10Chart() {
+                // Count the incidents for each group overall
+                const groupCounts = d3.rollup(data, v => v.length, d => d.gname);
+                const groupCountArray = Array.from(groupCounts, ([gname, count]) => ({ gname, count }))
+                    .sort((a, b) => d3.descending(a.count, b.count))
+                    .slice(0, 10);
+
+                // Set the x and y scales
+                const x = d3.scaleLinear()
+                    .domain([0, d3.max(groupCountArray, d => d.count)])
+                    .range([0, width]);
+
+                const y = d3.scaleBand()
+                    .domain(groupCountArray.map(d => d.gname))
+                    .range([0, height])
+                    .padding(0.1);
+
+                // Add a color scale
+                const color = d3.scaleSequential(d3.interpolateViridis)
+                    .domain([0, d3.max(groupCountArray, d => d.count)]);
+
+                // Add the x-axis
+                svg.append("g")
+                    .attr("class", "x-axis")
+                    .attr("transform", `translate(0,${height})`)
+                    .call(d3.axisBottom(x))
+                    .selectAll("text")
+                    .attr("dx", "-0.8em")
+                    .attr("dy", "0.15em")
+                    .attr("transform", "rotate(-45)")
+                    .style("text-anchor", "end");
+
+                // Add the y-axis
+                svg.append("g")
+                    .attr("class", "y-axis")
+                    .call(d3.axisLeft(y));
+
+                // Add the bars with animations
+                svg.selectAll(".bar")
+                    .data(groupCountArray)
+                    .enter().append("rect")
+                    .attr("class", "bar")
+                    .attr("x", 0)
+                    .attr("y", d => y(d.gname))
+                    .attr("width", 0)
+                    .attr("height", y.bandwidth())
+                    .attr("fill", d => color(d.count))
+                    .on("mouseover", function(event, d) {
+                        d3.select(this).attr("fill", "orange");
+                    })
+                    .on("mouseout", function(event, d) {
+                        d3.select(this).attr("fill", color(d.count));
+                    })
+                    .transition()
+                    .duration(1000)
+                    .attr("width", d => x(d.count));
+
+                // Add labels for group names and incident counts
+                svg.selectAll(".label")
+                    .data(groupCountArray)
+                    .enter().append("text")
+                    .attr("class", "label")
+                    .attr("x", d => x(d.count) + 5)
+                    .attr("y", d => y(d.gname) + y.bandwidth() / 2 + 5)
+                    .text(d => d.count);
+
+                // Add x-axis label
+                svg.append("text")
+                    .attr("x", width / 2)
+                    .attr("y", height + margin.bottom)
+                    .attr("text-anchor", "middle")
+                    .text("Number of Incidents");
+            }
+
+            function updateChart(year) {
+                console.log("Selected year: ", year);
+
+                // Filter data for the selected year
+                const filteredData = data.filter(d => d.iyear === year);
+
+                // Count the incidents for each group
+                const groupCounts = d3.rollup(filteredData, v => v.length, d => d.gname);
+                const groupCountArray = Array.from(groupCounts, ([gname, count]) => ({ gname, count }))
+                    .sort((a, b) => d3.descending(a.count, b.count))
+                    .slice(0, 10);
+
+                // Set the x and y scales
+                const x = d3.scaleLinear()
+                    .domain([0, d3.max(groupCountArray, d => d.count)])
+                    .range([0, width]);
+
+                const y = d3.scaleBand()
+                    .domain(groupCountArray.map(d => d.gname))
+                    .range([0, height])
+                    .padding(0.1);
+
+                // Add a color scale
+                const color = d3.scaleSequential(d3.interpolateViridis)
+                    .domain([0, d3.max(groupCountArray, d => d.count)]);
+
+                // Remove existing bars
+                svg.selectAll(".bar").remove();
+                svg.selectAll(".x-axis").remove();
+                svg.selectAll(".y-axis").remove();
+                svg.selectAll(".label").remove();
+
+                // Add the x-axis
+                svg.append("g")
+                    .attr("class", "x-axis")
+                    .attr("transform", `translate(0,${height})`)
+                    .call(d3.axisBottom(x))
+                    .selectAll("text")
+                    .attr("dx", "-0.8em")
+                    .attr("dy", "0.15em")
+                    .attr("transform", "rotate(-45)")
+                    .style("text-anchor", "end");
+
+                // Add the y-axis
+                svg.append("g")
+                    .attr("class", "y-axis")
+                    .call(d3.axisLeft(y));
+
+                // Add the bars with animations
+                svg.selectAll(".bar")
+                    .data(groupCountArray)
+                    .enter().append("rect")
+                    .attr("class", "bar")
+                    .attr("x", 0)
+                    .attr("y", d => y(d.gname))
+                    .attr("width", 0)
+                    .attr("height", y.bandwidth())
+                    .attr("fill", d => color(d.count))
+                    .on("mouseover", function(event, d) {
+                        d3.select(this).attr("fill", "orange");
+                    })
+                    .on("mouseout", function(event, d) {
+                        d3.select(this).attr("fill", color(d.count));
+                    })
+                    .transition()
+                    .duration(1000)
+                    .attr("width", d => x(d.count));
+
+                // Add labels for group names and incident counts
+                svg.selectAll(".label")
+                    .data(groupCountArray)
+                    .enter().append("text")
+                    .attr("class", "label")
+                    .attr("x", d => x(d.count) + 5)
+                    .attr("y", d => y(d.gname) + y.bandwidth() / 2 + 5)
+                    .text(d => d.count);
+
+                // Add x-axis label
+                svg.append("text")
+                    .attr("x", width / 2)
+                    .attr("y", height + margin.bottom)
+                    .attr("text-anchor", "middle")
+                    .text("Number of Incidents");
+            }
+        });
+    </script>
+</body>
+</html>
